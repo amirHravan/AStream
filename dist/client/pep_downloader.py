@@ -37,8 +37,8 @@ class PEPDownloader:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
             # Enable TCP window scaling if available
-            if hasattr(socket, 'TCP_WINDOW_CLAMP'):
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_WINDOW_CLAMP, 0)
+            # if hasattr(socket, 'TCP_WINDOW_CLAMP'):
+            #     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_WINDOW_CLAMP, 0)
                 
             # Set keepalive options
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)

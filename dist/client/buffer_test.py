@@ -19,16 +19,19 @@
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-import dash_buffer
-import time
 import copy
+import time
 
-SEGMENT = {'playback_length':4,
-           'size': 1024,
-           'bitrate': 120,
-           'data': "<byte data>",
-           'URI': "URL of the segment",
-           'segment_number': 0}
+import dash_buffer
+
+SEGMENT = {
+    "playback_length": 4,
+    "size": 1024,
+    "bitrate": 120,
+    "data": "<byte data>",
+    "URI": "URL of the segment",
+    "segment_number": 0,
+}
 # SEGMENT_ARRIVAL_TIMES = [1, 2, 3, 4, 5]
 SEGMENT_ARRIVAL_TIMES = [0, 2, 7, 14, 19]
 # SEGMENT_ARRIVAL_TIMES = [0, 1, 3, 19, 26]
@@ -47,15 +50,15 @@ def run_test(segment_arrival_times=SEGMENT_ARRIVAL_TIMES):
         while True:
             actual_time = time.time() - start_time
             if arrival_time <= actual_time <= arrival_time + 1:
-                segment['segment_number'] = count + 1
+                segment["segment_number"] = count + 1
                 db.write(segment)
                 break
             if actual_time > arrival_time:
-                print ("ERROR: Missed the time slot for segemt {}".format(count))
+                print("ERROR: Missed the time slot for segemt {}".format(count))
                 break
             time.sleep(1)
     if time.time() - start_time >= 40:
-        print ("Killing the player after 40 seconds")
+        print("Killing the player after 40 seconds")
         db.stop()
 
 

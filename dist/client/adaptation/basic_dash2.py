@@ -1,10 +1,16 @@
-__author__ = 'pjuluri'
+__author__ = "pjuluri"
 
 import config_dash
 
 
-def basic_dash2(segment_number, bitrates, average_dwn_time,
-                recent_download_sizes, previous_segment_times, current_bitrate):
+def basic_dash2(
+    segment_number,
+    bitrates,
+    average_dwn_time,
+    recent_download_sizes,
+    previous_segment_times,
+    current_bitrate,
+):
     """
     Module to predict the next_bitrate using the basic_dash algorithm. Selects the bitrate that is one lower than the
     current network capacity.
@@ -25,18 +31,23 @@ def basic_dash2(segment_number, bitrates, average_dwn_time,
 
     updated_dwn_time = sum(previous_segment_times) / len(previous_segment_times)
 
-    config_dash.LOG.debug("The average download time upto segment {} is {}. Before it was {}".format(segment_number,
-                                                                                                     updated_dwn_time,
-                                                                                                     average_dwn_time))
+    config_dash.LOG.debug(
+        "The average download time upto segment {} is {}. Before it was {}".format(
+            segment_number, updated_dwn_time, average_dwn_time
+        )
+    )
     # Calculate the running download_rate in Kbps for the most recent segments
-    download_rate = sum(recent_download_sizes) * 8 / (updated_dwn_time * len(previous_segment_times))
+    download_rate = (
+        sum(recent_download_sizes)
+        * 8
+        / (updated_dwn_time * len(previous_segment_times))
+    )
     bitrates = [float(i) for i in bitrates]
     bitrates.sort()
     next_rate = bitrates[0]
 
     # Check if we need to increase or decrease bitrate
     if download_rate > current_bitrate * config_dash.BASIC_UPPER_THRESHOLD:
-
         # Increase rate only if  download_rate is higher by a certain margin
         # Check if the bitrate is already at max
         if current_bitrate == bitrates[-1]:
@@ -56,5 +67,9 @@ def basic_dash2(segment_number, bitrates, average_dwn_time,
             else:
                 next_rate = bitrates[index - 1]
                 break
-    config_dash.LOG.info("Basic Adaptation: Download Rate = {}, next_bitrate = {}".format(download_rate, next_rate))
+    config_dash.LOG.info(
+        "Basic Adaptation: Download Rate = {}, next_bitrate = {}".format(
+            download_rate, next_rate
+        )
+    )
     return next_rate, updated_dwn_time

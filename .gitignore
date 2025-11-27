@@ -188,9 +188,6 @@ $RECYCLE.BIN/
 #############
 ## Python
 #############
-
-
-
 # Packages
 *.egg
 *.egg-info
@@ -222,3 +219,25 @@ media/
 .idea/
 data/
 tools/
+
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+TEMP_*
+TEMP_*/
+
+ASTREAM_LOGS
+
+# Vagrant
+.vagrant/
+.vagrant
+
+

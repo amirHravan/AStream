@@ -3,11 +3,12 @@ Apache2 Configuration:
 http://www.cyberciti.biz/faq/ubuntu-mod_python-apache-tutorial/
 """
 
-from mod_python import apache
-import time
-import math
 import json
+import math
 import os
+import time
+
+from mod_python import apache
 
 # File names
 log_file = "/var/www/py/speed_log.txt"
@@ -28,7 +29,7 @@ except IOError:
 
 
 def read_json(json_file, read_data):
-    """ Load the data from json file """
+    """Load the data from json file"""
     try:
         with open(json_file, "r") as json_handle:
             json_data = json.load(json_handle)
@@ -36,12 +37,13 @@ def read_json(json_file, read_data):
     except IOError:
         return 0
 
-speed_position = read_json(json_filename, 'speed_position')
+
+speed_position = read_json(json_filename, "speed_position")
 
 
 def get_next_rate():
-    """ Return the bitrates in bytes per second
-        Default = 10000 bytes per second
+    """Return the bitrates in bytes per second
+    Default = 10000 bytes per second
     """
     if speed_values:
         log_handle.seek(0)
@@ -60,22 +62,22 @@ def get_next_rate():
 
 
 def handler(req):
-    req.log_error('HTTP Throttle handler')
+    req.log_error("HTTP Throttle handler")
     req.send_http_header()
     if req.filename.endswith("m4s"):
         try:
-            data_file = open(req.filename, 'rb')
+            data_file = open(req.filename, "rb")
             req.clength = os.path.getsize(req.filename)
         except IOError:
             return apache.HTTP_NOT_FOUND
         send_file_at_log_speed(req, data_file)
         data_file.close()
     else:
-        req.write('<html><head><title>Testing mod_python</title></head><body>')
+        req.write("<html><head><title>Testing mod_python</title></head><body>")
         global test
-        req.write(str(test) + 'Hello World!!!' + req.filename)
+        req.write(str(test) + "Hello World!!!" + req.filename)
         test += 1
-        req.write('</body></html>')
+        req.write("</body></html>")
     return apache.OK
 
 
@@ -93,24 +95,25 @@ def send_file_at_log_speed(req, data_file):
         speed = get_next_rate()
         prev_time = time.time()
         # Count the number of transfers the data is to be divided into
-        transfers = int(math.floor(t + 1.0) * transfer_frequency - round(t * transfer_frequency))
+        transfers = int(
+            math.floor(t + 1.0) * transfer_frequency - round(t * transfer_frequency)
+        )
         for _ in range(transfers):
-            time.sleep(1.0/transfer_frequency)
+            time.sleep(1.0 / transfer_frequency)
             cur_time = time.time()
             time_diff = cur_time - prev_time
             prev_time = cur_time
             if speed != 0:
-                data = data_file.read(int(speed*time_diff))
+                data = data_file.read(int(speed * time_diff))
                 if not len(data) == 0:
                     break
                 req.write(data)
                 req.flush()
         if transfers == 0:
-            time.sleep(0.5/transfer_frequency)
-
+            time.sleep(0.5 / transfer_frequency)
 
 
 def write_json(json_file, s_pos):
-    """ Load the data from json file """
+    """Load the data from json file"""
     with open(json_file, "w") as json_handle:
-        json_handle.write(json.dumps({'speed_position': s_pos}))
+        json_handle.write(json.dumps({"speed_position": s_pos}))

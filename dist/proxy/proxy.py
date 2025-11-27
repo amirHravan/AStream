@@ -1,18 +1,16 @@
+import logging
+import select
 import socket
 import ssl
-import select
 import threading
-import logging
-import time
-from typing import Dict, Optional, Tuple
-from urllib.parse import urlparse
+from typing import Optional, Tuple
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger('DASH-PEP')
+logger = logging.getLogger("DASH-PEP")
+
 
 class HTTPSConnectionHandler:
     def __init__(self, client_sock: socket.socket, client_addr: Tuple[str, int]):
@@ -25,17 +23,29 @@ class HTTPSConnectionHandler:
         self.buffer_size = 64 * 1024  # 64KB buffer
         self.running = False
 
+    # def connect_to_server(self, host: str, port: int = 443) -> bool:
+    #     """Establish SSL connection to the origin server"""
+    #     try:
+    #         # Create TCP socket
+    #         plain_socket = socket.create_connection((host, port))
+
+    #         # Wrap with SSL
+    #         self.server_sock = self.ssl_context.wrap_socket(
+    #             plain_socket,
+    #             server_hostname=host
+    #         )
+    #         logging.debug(f"Established SSL connection to {host}:{port}")
+    #         return True
+    #     except Exception as e:
+    #         logger.error(f"Failed to connect to server {host}:{port}: {e}")
+    #         return False
+
     def connect_to_server(self, host: str, port: int = 443) -> bool:
-        """Establish SSL connection to the origin server"""
+        """Establish plain TCP connection to the origin server (NO SSL)"""
         try:
-            # Create TCP socket
-            plain_socket = socket.create_connection((host, port))
-            
-            # Wrap with SSL
-            self.server_sock = self.ssl_context.wrap_socket(
-                plain_socket, 
-                server_hostname=host
-            )
+            # Just create plain TCP connection - client will do SSL through the tunnel
+            self.server_sock = socket.create_connection((host, port), timeout=10)
+            logger.info(f"Connected to {host}:{port}")
             return True
         except Exception as e:
             logger.error(f"Failed to connect to server {host}:{port}: {e}")
@@ -49,13 +59,14 @@ class HTTPSConnectionHandler:
                     # Increase buffer sizes
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
-                    
+
                     # Disable Nagle's algorithm
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    
+
                     # Enable TCP Quick ACK if available
-                    if hasattr(socket, 'TCP_QUICKACK'):
+                    if hasattr(socket, "TCP_QUICKACK"):
                         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+
                 except Exception as e:
                     logger.error(f"Error optimizing socket: {e}")
 
@@ -63,17 +74,19 @@ class HTTPSConnectionHandler:
         """Handle proxying data between client and server with improved SSL handling"""
         try:
             # Initialize buffers for SSL data
-            client_buffer = b''
-            server_buffer = b''
-            
+            _ = b""
+            _ = b""
+
             while self.running:
                 # Wait for data on either socket with timeout
-                readable, writeable, _ = select.select(
+                readable, _, _ = select.select(
                     [self.client_sock, self.server_sock],  # Read sockets
                     [],  # Write sockets
                     [],  # Exception sockets
-                    1.0   # Timeout
+                    1.0,  # Timeout
                 )
+
+                # logger.debug("readable sockets: " + ", ".join(str(sock.fileno()) for sock in readable))
 
                 for sock in readable:
                     # Determine which direction we're forwarding
@@ -89,17 +102,26 @@ class HTTPSConnectionHandler:
                     try:
                         # Try to receive data
                         data = sock.recv(self.buffer_size)
-                        
+
+                        if len(data) != 0:
+                            logger.debug(
+                                f"Received {len(data)} bytes data from {buffer_name}"
+                            )
+
                         if data:
                             try:
                                 # Forward data to the other endpoint
                                 dest_sock.sendall(data)
-                                logger.debug(f"Forwarded {len(data)} bytes from {buffer_name}")
+                                logger.debug(
+                                    f"Forwarded {len(data)} bytes from {buffer_name}"
+                                )
                             except (ssl.SSLWantWriteError, ssl.SSLWantReadError):
                                 # SSL operations would block - retry
                                 continue
                             except Exception as e:
-                                logger.error(f"Error forwarding data from {buffer_name}: {e}")
+                                logger.error(
+                                    f"Error forwarding data from {buffer_name}: {e}"
+                                )
                                 self.running = False
                                 break
                         else:
@@ -122,7 +144,7 @@ class HTTPSConnectionHandler:
                                 logger.info(f"{buffer_name} connection closed")
                                 self.running = False
                                 break
-                                
+
                     except ssl.SSLWantReadError:
                         # SSL read would block - normal for non-blocking sockets
                         continue
@@ -153,31 +175,33 @@ class HTTPSConnectionHandler:
             if not data:
                 logger.error("No data received from client")
                 return
-                
+
             try:
-                connect_request = data.decode('utf-8').strip()
+                connect_request = data.decode("utf-8").strip()
             except UnicodeDecodeError:
                 logger.error("Invalid request encoding")
                 return
-                
-            if connect_request.startswith('CONNECT'):
+
+            if connect_request.startswith("CONNECT"):
+                logger.debug(connect_request)
                 # Parse: "CONNECT dash.akamaized.net:443 HTTP/1.0"
                 try:
-                    _, target_host_port, _ = connect_request.split(' ')
-                    target_host, target_port = target_host_port.split(':')
+                    tokens = connect_request.split(" ")
+                    target_host_port = tokens[1]
+                    target_host, target_port = target_host_port.split(":")
                     target_port = int(target_port)
-                    
+
                     logger.info(f"Connecting to {target_host}:{target_port}")
-                    
+
                     # Connect to actual target
                     if self.connect_to_server(target_host, target_port):
                         # Apply optimizations
                         self.optimize_connections()
-                        
+
                         # Send 200 Connection Established back to client
                         response = "HTTP/1.1 200 Connection established\r\n\r\n"
                         self.client_sock.sendall(response.encode())
-                        
+
                         # Start proxying data
                         self.running = True
                         self.proxy_data()
@@ -193,7 +217,7 @@ class HTTPSConnectionHandler:
                 logger.error("Expected CONNECT request, got something else")
                 response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n"
                 self.client_sock.sendall(response.encode())
-                
+
         except Exception as e:
             logger.error(f"Error in handle_client: {e}")
         finally:
@@ -208,9 +232,15 @@ class HTTPSConnectionHandler:
         except Exception as e:
             logger.error(f"Error in cleanup: {e}")
 
+
 class DashHTTPSProxy:
-    def __init__(self, listen_host: str = '0.0.0.0', listen_port: int = 8888,
-                 target_host: str = 'dash.akamaized.net', target_port: int = 443):
+    def __init__(
+        self,
+        listen_host: str = "0.0.0.0",
+        listen_port: int = 8888,
+        target_host: str = "dash.akamaized.net",
+        target_port: int = 443,
+    ):
         self.listen_host = listen_host
         self.listen_port = listen_port
         self.target_host = target_host
@@ -226,8 +256,10 @@ class DashHTTPSProxy:
             self.sock.bind((self.listen_host, self.listen_port))
             self.sock.listen(100)
             self.running = True
-            
-            logger.info(f"DASH HTTPS Proxy listening on {self.listen_host}:{self.listen_port}")
+
+            logger.info(
+                f"DASH HTTPS Proxy listening on {self.listen_host}:{self.listen_port}"
+            )
             logger.info(f"Forwarding to {self.target_host}:{self.target_port}")
 
             while self.running:
@@ -267,21 +299,25 @@ class DashHTTPSProxy:
         except Exception as e:
             logger.error(f"Error in cleanup: {e}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='DASH HTTPS Proxy')
-    parser.add_argument('--listen-host', default='0.0.0.0', help='Listen host')
-    parser.add_argument('--listen-port', type=int, default=8888, help='Listen port')
-    parser.add_argument('--target-host', default='dash.akamaized.net', help='Target host')
-    parser.add_argument('--target-port', type=int, default=443, help='Target port')
-    
+
+    parser = argparse.ArgumentParser(description="DASH HTTPS Proxy")
+    parser.add_argument("--listen-host", default="0.0.0.0", help="Listen host")
+    parser.add_argument("--listen-port", type=int, default=8888, help="Listen port")
+    parser.add_argument(
+        "--target-host", default="dash.akamaized.net", help="Target host"
+    )
+    parser.add_argument("--target-port", type=int, default=443, help="Target port")
+
     args = parser.parse_args()
 
     proxy = DashHTTPSProxy(
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         target_host=args.target_host,
-        target_port=args.target_port
+        target_port=args.target_port,
     )
 
     try:
