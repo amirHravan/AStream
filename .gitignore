@@ -240,4 +240,12 @@ ASTREAM_LOGS
 .vagrant/
 .vagrant
 
+.ruff_cache
+.ruff_cache/
 
+__pycache__/
+
+manifest.mpd
+
+plots/
+plots

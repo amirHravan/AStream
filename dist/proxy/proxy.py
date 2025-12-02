@@ -3,6 +3,7 @@ import select
 import socket
 import ssl
 import threading
+import urllib.parse
 from typing import Optional, Tuple
 
 # Configure logging
@@ -177,19 +178,24 @@ class HTTPSConnectionHandler:
                 return
 
             try:
-                connect_request = data.decode("utf-8").strip()
+                request_str = data.decode("utf-8")
+                first_line = request_str.split("\r\n")[0]
             except UnicodeDecodeError:
                 logger.error("Invalid request encoding")
                 return
 
-            if connect_request.startswith("CONNECT"):
-                logger.debug(connect_request)
+            if first_line.startswith("CONNECT"):
+                logger.debug(first_line)
                 # Parse: "CONNECT dash.akamaized.net:443 HTTP/1.0"
                 try:
-                    tokens = connect_request.split(" ")
+                    tokens = first_line.split(" ")
                     target_host_port = tokens[1]
-                    target_host, target_port = target_host_port.split(":")
-                    target_port = int(target_port)
+                    if ":" in target_host_port:
+                        target_host, target_port = target_host_port.split(":")
+                        target_port = int(target_port)
+                    else:
+                        target_host = target_host_port
+                        target_port = 443
 
                     logger.info(f"Connecting to {target_host}:{target_port}")
 
@@ -214,9 +220,66 @@ class HTTPSConnectionHandler:
                     response = "HTTP/1.1 400 Bad Request\r\n\r\n"
                     self.client_sock.sendall(response.encode())
             else:
-                logger.error("Expected CONNECT request, got something else")
-                response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n"
-                self.client_sock.sendall(response.encode())
+                # Handle standard HTTP proxy requests (GET, POST, etc.)
+                try:
+                    tokens = first_line.split(" ")
+                    if len(tokens) >= 2:
+                        method = tokens[0]
+                        url = tokens[1]
+                        parsed = urllib.parse.urlparse(url)
+                        
+                        # Only handle absolute URIs which are sent to proxies
+                        if parsed.scheme and parsed.hostname:
+                            target_host = parsed.hostname
+                            target_port = parsed.port or 80
+                            path = parsed.path or "/"
+                            if parsed.query:
+                                path += "?" + parsed.query
+                            
+                            logger.info(f"Proxying {method} to {target_host}:{target_port}")
+                            
+                            if self.connect_to_server(target_host, target_port):
+                                self.optimize_connections()
+                                
+                                # Rewrite the request line to be relative for the origin server
+                                version = tokens[2] if len(tokens) > 2 else "HTTP/1.1"
+                                new_first_line = f"{method} {path} {version}"
+                                
+                                # Replace the first line in the data
+                                lines = request_str.split("\r\n")
+                                lines[0] = new_first_line
+                                new_data = "\r\n".join(lines).encode("utf-8")
+                                
+                                # Send modified data to server
+                                self.server_sock.sendall(new_data)
+                                
+                                # Start proxying data
+                                self.running = True
+                                self.proxy_data()
+                            else:
+                                logger.error("Failed to connect to target server")
+                                response = "HTTP/1.1 502 Bad Gateway\r\n\r\n"
+                                self.client_sock.sendall(response.encode())
+                        else:
+                            # Relative URI, forward to default target
+                            logger.info(f"Relative URI received, forwarding to default target {self.target_host}:{self.target_port}")
+                            if self.connect_to_server(self.target_host, self.target_port):
+                                self.optimize_connections()
+                                self.server_sock.sendall(data)
+                                self.running = True
+                                self.proxy_data()
+                            else:
+                                response = "HTTP/1.1 502 Bad Gateway\r\n\r\n"
+                                self.client_sock.sendall(response.encode())
+                    else:
+                        logger.error("Invalid request format")
+                        response = "HTTP/1.1 400 Bad Request\r\n\r\n"
+                        self.client_sock.sendall(response.encode())
+
+                except Exception as e:
+                    logger.error(f"Error handling HTTP request: {e}")
+                    response = "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+                    self.client_sock.sendall(response.encode())
 
         except Exception as e:
             logger.error(f"Error in handle_client: {e}")

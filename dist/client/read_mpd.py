@@ -90,6 +90,7 @@ class MediaObject:
         self.base_url_path = None
         self.url_list = []
         self.segment_sizes = []
+        self.id = None  # Added to store Representation ID
 
 
 class DashPlayback:
@@ -216,14 +217,22 @@ def get_url_list(media_object, segment_duration, playback_duration, bitrate):
             config_dash.LOG.error("No base URL path set in media object")
             return media_object
 
-        representation_id = BITRATE_TO_ID.get(bitrate)
+        representation_id = media_object.id if media_object.id else BITRATE_TO_ID.get(bitrate)
         if not representation_id:
             config_dash.LOG.error(f"No representation ID found for bitrate {bitrate}")
             return media_object
 
         # Set initialization segment URL using template pattern
-        init_template = "$RepresentationID$/$RepresentationID$_0.m4v"
-        media_template = "$RepresentationID$/$RepresentationID$_$Number$.m4v"
+        # Check if templates were already parsed from MPD
+        if media_object.initialization and "$RepresentationID$" in media_object.initialization:
+             init_template = media_object.initialization
+        else:
+             init_template = "$RepresentationID$/$RepresentationID$_0.m4v"
+
+        if media_object.base_url and "$RepresentationID$" in media_object.base_url:
+             media_template = media_object.base_url
+        else:
+             media_template = "$RepresentationID$/$RepresentationID$_$Number$.m4v"
 
         # Replace template variables for initialization
         media_object.initialization = init_template.replace(
@@ -252,7 +261,16 @@ def get_url_list(media_object, segment_duration, playback_duration, bitrate):
             segment_url = media_template.replace(
                 "$RepresentationID$", representation_id
             )
-            segment_url = segment_url.replace("$Number$", str(i))
+            
+            # Handle $Number%05d$ style formatting
+            match = re.search(r"\$Number(%[0-9]+d)\$", segment_url)
+            if match:
+                fmt = match.group(1)
+                formatted_number = fmt % i
+                segment_url = segment_url.replace(f"$Number{fmt}$", formatted_number)
+            else:
+                segment_url = segment_url.replace("$Number$", str(i))
+
             full_url = media_object.base_url_path + segment_url
             media_object.url_list.append(full_url)
 
@@ -429,6 +447,8 @@ def read_mpd(
                         # Create MediaObject for this bandwidth
                         dashplayback.video[bandwidth] = MediaObject()
                         media_object = dashplayback.video[bandwidth]
+                        media_object.id = representation.get("id") # Store the ID
+                        config_dash.LOG.info(f"Parsed Representation: Bandwidth={bandwidth}, ID={media_object.id}")
 
                         # Store base URL path
                         media_object.base_url_path = base_url_path

@@ -943,6 +943,10 @@ def main():
     if args.use_pep:
         config_dash.LOG.info(f"Using PEP proxy at {args.pep_host}:{args.pep_port}")
 
+    global SEGMENT_LIMIT
+    if args.SEGMENT_LIMIT:
+        SEGMENT_LIMIT = args.SEGMENT_LIMIT
+
     # Retrieve the MPD files for the video
     mpd_file = get_mpd(mpd_url)
     if not mpd_file:

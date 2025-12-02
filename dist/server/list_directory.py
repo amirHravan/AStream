@@ -16,10 +16,10 @@ def list_directory(path):
     From SimpleHTTPServer.py
 
     """
-    print "Get DIR listing for ", path 
+    print("Get DIR listing for ", path) 
     try:
         dir_list = os.listdir(path)
-        print "The path for ", path, " is ", list
+        print("The path for ", path, " is ", dir_list)
     except os.error:
         response = "404  No permission to list directory"
     dir_list.sort(key=lambda a: a.lower())
